@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1099461234350",
+    "project_id": "italianhelper-22422",
+    "storage_bucket": "italianhelper-22422.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1099461234350:android:4648391382d2adf025673f",
+        "android_client_info": {
+          "package_name": "com.example.italianhelper"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBhpQcC3L9uZZnlv_eVNKAk08-9dFoKmsM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

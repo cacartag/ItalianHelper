@@ -1,0 +1,39 @@
+# Project-wide ignore
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+
+# Android Studio
+*.iml
+
+# Log Files
+*.log
+
+# Keystore files
+*.jks
+*.keystore
+
+# Google Services file (optional, keep if you want to keep it private)
+# google-services.json
+
+# Lint
+lint/
+
+# KSP
+**/build/generated/ksp
+
+# Unit test reports
+**/build/reports/tests/
+**/build/test-results/
+
+# Android instrumentation tests
+**/build/outputs/androidTest-results/
+**/build/outputs/connected_android_test_debug_code_coverage/
+
+# AS Profile Report
+**/build/outputs/logs/
