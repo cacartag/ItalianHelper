@@ -6,74 +6,57 @@ import androidx.lifecycle.viewModelScope
 import com.example.italianhelper.data.*
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import java.io.InputStreamReader
 
 class FlashcardViewModel(application: Application) : AndroidViewModel(application) {
-    private val repository: FlashcardRepository
     private val firebaseRepository = FirebaseRepository()
     
+    private val _allCards = MutableStateFlow<List<Flashcard>>(emptyList())
     private val _selectedCategory = MutableStateFlow<String?>(null)
     val selectedCategory: StateFlow<String?> = _selectedCategory.asStateFlow()
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val cardsToReview: StateFlow<List<Flashcard>> = _selectedCategory
-        .flatMapLatest { category ->
-            if (category == null) flowOf(emptyList())
-            else repository.getCardsToReview(System.currentTimeMillis(), category)
+    val cardsToReview: StateFlow<List<Flashcard>> = combine(_allCards, _selectedCategory) { cards, category ->
+        if (category == null) emptyList()
+        else {
+            val currentTime = System.currentTimeMillis()
+            cards.filter { card ->
+                val isCategoryMatch = if (category == "Other") {
+                    card.category !in listOf("Verb", "Noun", "Adjective")
+                } else {
+                    card.category == category
+                }
+                isCategoryMatch && card.nextReview <= currentTime
+            }.sortedBy { it.nextReview }
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _uiState = MutableStateFlow<UiState>(UiState.Loading)
+    val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     init {
-        val dao = AppDatabase.getDatabase(application).flashcardDao()
-        repository = FlashcardRepository(dao)
-        
         syncWithFirebase()
     }
 
-    private fun syncWithFirebase() {
+    fun syncWithFirebase() {
         viewModelScope.launch {
-            println("SRS_DEBUG: Starting sync...")
-            val cloudWords = firebaseRepository.getWords()
-            println("SRS_DEBUG: Cloud words found: ${cloudWords.size}")
-            if (cloudWords.isEmpty()) {
-                println("SRS_DEBUG: Cloud is empty, loading from assets...")
-                val initialWords = loadWordsFromAssets()
-                println("SRS_DEBUG: Loaded ${initialWords.size} words from assets")
-                if (initialWords.isNotEmpty()) {
-                    firebaseRepository.seedDatabase(initialWords)
-                    println("SRS_DEBUG: Seeded cloud database")
-                    repository.clearAll()
-                    repository.insertAll(initialWords)
+            _uiState.value = UiState.Loading
+            try {
+                println("SRS_DEBUG: Starting sync...")
+                val cloudWords = firebaseRepository.getWords()
+                println("SRS_DEBUG: Cloud words found: ${cloudWords.size}")
+                
+                if (cloudWords.isEmpty()) {
+                    println("SRS_DEBUG: Cloud is empty.")
+                    _uiState.value = UiState.Error("Database is empty. Please contact support.")
+                } else {
+                    _allCards.value = cloudWords
+                    _uiState.value = UiState.Success
                 }
-            } else {
-                println("SRS_DEBUG: Cloud has words, syncing to local...")
-                repository.clearAll()
-                repository.insertAll(cloudWords)
+            } catch (e: Exception) {
+                println("SRS_DEBUG: Sync failed: ${e.message}")
+                _uiState.value = UiState.Error("Network error. Check your connection.")
             }
-        }
-    }
-
-    private fun loadWordsFromAssets(): List<Flashcard> {
-        return try {
-            val inputStream = getApplication<Application>().assets.open("words.json")
-            val content = inputStream.bufferedReader().use { it.readText() }
-            val type = object : TypeToken<List<WordEntry>>() {}.type
-            val wordEntries: List<WordEntry> = Gson().fromJson(content, type)
-            wordEntries.map { 
-                Flashcard(
-                    italian = it.it,
-                    english = it.en,
-                    category = it.cat,
-                    exampleSentence = it.s ?: "",
-                    exampleTranslation = it.st ?: ""
-                )
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            emptyList()
         }
     }
 
@@ -84,9 +67,20 @@ class FlashcardViewModel(application: Application) : AndroidViewModel(applicatio
     fun reviewCard(flashcard: Flashcard, quality: Int) {
         viewModelScope.launch {
             val updatedCard = calculateNextReview(flashcard, quality)
-            repository.updateCard(updatedCard)
+            // Update local state immediately for snappy UI
+            _allCards.value = _allCards.value.map { 
+                if (it.firestoreId == flashcard.firestoreId) updatedCard else it 
+            }
+            // Sync to Firebase
+            firebaseRepository.updateCard(updatedCard)
         }
     }
 }
 
 data class WordEntry(val it: String, val en: String, val cat: String, val s: String? = null, val st: String? = null)
+
+sealed interface UiState {
+    object Loading : UiState
+    object Success : UiState
+    data class Error(val message: String) : UiState
+}
